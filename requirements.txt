@@ -1,0 +1,6 @@
+opencv-contrib-python>=4.10.0.84
+numpy>=1.26,<3
+scikit-learn>=1.4
+matplotlib>=3.8
+PyYAML>=6.0
+cryptography>=42.0

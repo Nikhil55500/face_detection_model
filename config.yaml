@@ -1,0 +1,26 @@
+paths:
+  detector_model: models/face_detection_yunet_2023mar.onnx
+  recognizer_model: models/face_recognition_sface_2021dec.onnx
+  students: data/students
+  unknown: data/unknown
+  split_manifest: data/splits.json
+  classroom_scenes: data/classroom_scenes.json
+  templates: data/templates.enc
+  reports: reports
+  threshold_report: reports/threshold.json
+
+detection:
+  confidence: 0.85
+  nms_threshold: 0.30
+  top_k: 5000
+  minimum_detection_score: 0.90
+  minimum_face_size: 60
+  minimum_blur_score: 45.0
+  scene_match_iou: 0.30
+
+recognition:
+  initial_threshold: 0.363
+  review_margin: 0.04
+  minimum_identity_margin: 0.03
+  process_every_n_frames: 1
+  temporal_confirm_frames: 3

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Keep biometric source images, encrypted templates, and reports out of version control.
+/data/
+/reports/
+
+# Downloaded ONNX models are reproducible with attendance.download_models.
+/models/*.onnx
