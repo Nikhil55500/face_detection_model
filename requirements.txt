@@ -4,3 +4,4 @@ scikit-learn>=1.4
 matplotlib>=3.8
 PyYAML>=6.0
 cryptography>=42.0
+streamlit>=1.40
