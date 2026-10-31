@@ -20,20 +20,119 @@ Pretrained recognition models are appropriate for small registration datasets be
 - The Python OpenCV dependency is `opencv-contrib-python`, which provides `FaceDetectorYN` and `FaceRecognizerSF` on Windows. Check upstream licenses and all third-party/model terms for your deployment context; licenses do not by themselves establish that biometric use is lawful.
 - Model files are downloaded from the OpenCV Zoo repository at runtime and are not committed here.
 
-## Windows installation
+## Windows installation and virtual environment
 
-Run these commands in PowerShell from the project directory:
+Run all commands from the project directory, for example `F:\face model`.
+
+### 1. Create the virtual environment
+
+PowerShell:
 
 ```powershell
 py -3.13 -m venv .venv
+```
+
+If Python 3.13 is unavailable, use an available supported version such as `py -3.12`, `py -3.11`, or `py -3.10`. The project requires Python 3.10 or newer.
+
+### 2. Activate the virtual environment
+
+PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
+```
+
+The execution-policy command changes policy only for the current PowerShell process. After activation, the prompt normally begins with `(.venv)`.
+
+Command Prompt (`cmd.exe`):
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+Git Bash on Windows:
+
+```bash
+source .venv/Scripts/activate
+```
+
+Verify activation:
+
+```powershell
+python --version
+where.exe python
+python -c "import sys; print(sys.executable)"
+```
+
+If PowerShell activation is blocked, use Command Prompt, Git Bash, or the environment executables directly:
+
+```powershell
+.\.venv\Scripts\python.exe --version
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+### 3. Install dependencies
+
+With activation enabled:
+
+```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install -e .
+```
+
+Without activation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+Do not install both `opencv-python` and `opencv-contrib-python`. This project requires `opencv-contrib-python` for `FaceDetectorYN` and `FaceRecognizerSF`.
+
+### 4. Download the pretrained models
+
+```powershell
 python -m attendance.download_models
 ```
 
-The code requires Python 3.10 or newer. If PowerShell blocks activation, use `.\.venv\Scripts\python.exe` instead of activating the environment. Do not install both `opencv-python` and `opencv-contrib-python` in the same environment; this project requires the latter.
+The command downloads and validates:
+
+```text
+models\face_detection_yunet_2023mar.onnx
+models\face_recognition_sface_2021dec.onnx
+```
+
+Use the direct environment executable when not activated:
+
+```powershell
+.\.venv\Scripts\python.exe -m attendance.download_models
+```
+
+Confirm the OpenCV face APIs:
+
+```powershell
+python -c "import cv2; print(cv2.__version__); print(hasattr(cv2, 'FaceDetectorYN_create'), hasattr(cv2, 'FaceRecognizerSF_create'))"
+```
+
+The final output should end with `True True`.
+
+### 5. Run the architecture notebook
+
+```powershell
+python -m pip install notebook
+python -m jupyter notebook model_architecture.ipynb
+```
+
+In VS Code, select `.venv` as the notebook kernel. The architecture notebook documents the pipelines and displays configuration charts. It does not train or fine-tune the pretrained models.
+
+### 6. Deactivate the environment
+
+```powershell
+deactivate
+```
 
 Generate a unique key and keep it in a protected secret manager or user-scoped environment variable. **Do not commit or share it.** Losing it makes the encrypted templates unrecoverable.
 
@@ -144,6 +243,140 @@ Scene paths are resolved relative to the JSON file, and boxes use integer pixel 
    ```
 
    The command asks for confirmation unless `--yes` is provided. It also removes the student's entries from split and classroom-scene manifests and invalidates prior evaluation reports/thresholds because they no longer describe the current gallery. Backups, copies, exports, and logs must be handled under your retention policy separately.
+
+## Using the pretrained model step by step
+
+The system uses two pretrained ONNX models; it does not train a new face classifier:
+
+1. **YuNet** detects faces and predicts five landmarks.
+2. **Alignment** crops and aligns each detected face.
+3. **SFace** converts each aligned face into a feature embedding.
+4. **Cosine similarity** compares the embedding with the enrolled encrypted templates.
+5. **Thresholds and margins** assign Student ID, `Unknown`, or `Review`.
+
+### Complete first-time model setup
+
+From the project directory, with `.venv` activated:
+
+```powershell
+# Download YuNet and SFace
+python -m attendance.download_models
+
+# Create a session-safe template encryption key
+$env:ATTENDANCE_TEMPLATE_KEY = (python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+
+# Verify that the data layout and environment are ready
+python --version
+python -c "import cv2; print('OpenCV', cv2.__version__)"
+```
+
+The key in `$env:ATTENDANCE_TEMPLATE_KEY` exists only in the current terminal session. It must be set again in every new terminal before enrollment, recognition, deletion, or evaluation that loads the gallery.
+
+### Prepare model inputs
+
+Place images under student/session folders described above and ensure `config.yaml` paths point to the correct files. Then prepare data and enroll:
+
+```powershell
+python -m attendance.evaluate --prepare-splits --config config.yaml --seed 42
+python -m attendance.enroll --config config.yaml
+python -m attendance.evaluate --config config.yaml
+```
+
+Do not enroll face images from validation or test sessions. The enrollment command itself reads only the training records generated by `--prepare-splits`.
+
+### Run recognition
+
+Image:
+
+```powershell
+python -m attendance.recognize --source ".\classroom.jpg" --config config.yaml
+python -m attendance.recognize --source ".\classroom.jpg" --config config.yaml --output ".\reports\classroom-recognized.jpg" --no-display
+```
+
+Video file:
+
+```powershell
+python -m attendance.recognize --source ".\lesson.mp4" --config config.yaml --output ".\reports\lesson-recognized.mp4" --no-display
+```
+
+Default webcam (`0`):
+
+```powershell
+python -m attendance.recognize --source 0 --config config.yaml
+```
+
+A different webcam may use camera index `1`, `2`, and so on:
+
+```powershell
+python -m attendance.recognize --source 1 --config config.yaml
+```
+
+RTSP or other network video URL stored in the environment:
+
+```powershell
+$env:ATTENDANCE_RTSP_URL = "rtsp://user:password@example-host:554/stream"
+python -m attendance.recognize --source $env:ATTENDANCE_RTSP_URL --config config.yaml --output ".\reports\stream.mp4" --no-display
+```
+
+Prefer an organization-managed secret manager and avoid committing credentials or embedding passwords in scripts.
+
+### Command help and direct environment commands
+
+To see every available option for an individual command:
+
+```powershell
+python -m attendance.download_models --help
+python -m attendance.enroll --help
+python -m attendance.evaluate --help
+python -m attendance.recognize --help
+python -m attendance.delete_student --help
+```
+
+If `.venv` is not activated, run any command with `.\.venv\Scripts\python.exe`, for example:
+
+```powershell
+.\.venv\Scripts\python.exe -m attendance.recognize --source 0 --config config.yaml
+```
+
+### Understanding recognition results
+
+For each detected face, the output can contain:
+
+| Result | Meaning | Recommended action |
+|---|---|---|
+| Student ID | Cosine score is above the threshold and outside the review margins | Verify attendance against independent records when required |
+| `Unknown` | Best enrolled-candidate score is below the rejection range | Do not assign an identity |
+| `Review: ...` | Score is borderline, identity candidates are ambiguous, or image quality is inadequate | Require human verification |
+| Low-confidence box | Detection confidence or face-size/blur quality failed configured limits | Require a clearer image; the system is not forced to match it |
+
+The score printed by recognition is cosine similarity, not a probability. The detector and recognizer are pretrained and not fine-tuned by enrollment. Enrollment stores templates only.
+
+### Configuration
+
+The paths and thresholds are in `config.yaml`:
+
+```yaml
+detection:
+  confidence: 0.85
+  nms_threshold: 0.30
+  top_k: 5000
+  minimum_detection_score: 0.90
+  minimum_face_size: 60
+  minimum_blur_score: 45.0
+```
+
+Recognition settings include the fallback threshold, review margin, identity margin, frame interval, and temporal confirmation count:
+
+```yaml
+recognition:
+  initial_threshold: 0.363
+  review_margin: 0.04
+  minimum_identity_margin: 0.03
+  process_every_n_frames: 1
+  temporal_confirm_frames: 3
+```
+
+Run a held-out evaluation before relying on these values. Changing thresholds without independent validation can increase false acceptance or false rejection.
 
 ## Configuration and interpretation
 
